@@ -25,6 +25,7 @@ def generate_frames(reaction_type):
             if not success:
                 break
 
+            frame = cv2.flip(frame, 1)
             # 1. Get hand tracking data
             hand_pos = tracker.get_hand_position(frame)
 
