@@ -105,22 +105,15 @@ document.head.appendChild(styleTag);
 export default function Lab() {
   const navigate = useNavigate();
   const stopCalled = useRef(false); // prevent double-call on strict mode remount
+  const imgRef = useRef(null); // Reference for the image element
 
   const handleBack = () => {
-    if (stopCalled.current) return;
-    stopCalled.current = true;
-    
-    // 1. Tell the backend to stop the stream and clear the session
-    api.post('/reactions/stop/')
-        .then(() => {
-            // 2. Navigate back to the dashboard upon success
-            navigate('/dashboard');
-        })
-        .catch((err) => {
-            console.error("Error stopping reaction:", err);
-            // Fallback: forcefully navigate back even if the API fails so the user isn't trapped
-            navigate('/dashboard'); 
-        });
+    // Force the browser to instantly abort the stream connection
+    if (imgRef.current) {
+      imgRef.current.src = ''; 
+    }
+    // Navigate immediately. The unmount will trigger the useEffect cleanup.
+    navigate('/dashboard');
   };
 
   // Stop the reaction if the user closes/refreshes the tab
@@ -144,7 +137,12 @@ export default function Lab() {
     return () => {
       window.removeEventListener('beforeunload', handleUnload);
       
-      // Also stop on React unmount (e.g. browser back button)
+      // Force stream abort if unmounted via the browser's native back button
+      if (imgRef.current) {
+        imgRef.current.src = '';
+      }
+      
+      // Also stop on React unmount (e.g. browser back button or handleBack)
       if (!stopCalled.current) {
         stopCalled.current = true;
         api.post('/reactions/stop/').catch(() => {});
@@ -179,6 +177,7 @@ export default function Lab() {
           image requests (port 5173 → 8000), and Django returns 401.
         */}
         <img
+          ref={imgRef} // Attach the ref to the image tag
           src="/api/reactions/video-feed/"
           alt="Virtual Lab Stream"
           style={styles.stream}
