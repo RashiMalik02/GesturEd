@@ -6,6 +6,10 @@ from django.views.decorators.http import require_http_methods
 
 from .opencv_handler import generate_frames
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -53,6 +57,7 @@ def current_reaction_view(request):
     return JsonResponse({
         "active_reaction": active_reaction,
         "is_running": active_reaction is not None,
+<<<<<<< HEAD
     })
 
 
@@ -72,3 +77,6 @@ def video_feed_view(request):
         generate_frames(active_reaction),
         content_type="multipart/x-mixed-replace; boundary=frame",
     )
+=======
+    })
+>>>>>>> cbd2dd0 (reaction views)
