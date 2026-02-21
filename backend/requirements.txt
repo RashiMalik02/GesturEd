@@ -1,5 +1,9 @@
 asgiref==3.11.1
+<<<<<<< HEAD
 Django==4.2.15
+=======
+Django==6.0.2
+>>>>>>> 9d9787f (Initial commit: Added my workspace folder)
 django-cors-headers==4.9.0
 djangorestframework==3.16.1
 sqlparse==0.5.5

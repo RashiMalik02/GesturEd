@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # reactions/views.py
 # This file is inside your `reactions` app folder. REPLACE the existing reactions/views.py with this.
 
@@ -75,3 +76,8 @@ def video_feed_view(request):
         generate_frames(active_reaction),
         content_type="multipart/x-mixed-replace; boundary=frame",
     )
+=======
+from django.shortcuts import render
+
+# Create your views here.
+>>>>>>> 9d9787f (Initial commit: Added my workspace folder)
