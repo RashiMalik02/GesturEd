@@ -1,76 +1,71 @@
-# reactions/opencv_handler.py
-# Place in: backend/reactions/opencv_handler.py — REPLACE existing file entirely.
-#
-# Imports HandTracker, TestTube, LitmusPaper directly from opencv_modules/
-# Camera is LAZY — only starts on start_lab(), stops on stop_lab().
-
 import os
 import sys
 import math
 import threading
 import cv2
+import numpy as np
 
-# ── Point to opencv_modules/ (sits alongside backend/ at project root) ────────
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../opencv_modules'))
+sys.path.insert(0, '/Users/talindaga/Desktop/ChemLabs/opencv_modules')
 
-from hand_tracker  import HandTracker
-from test_tube     import TestTube
-from litmus_paper  import LitmusPaper
+from hand_tracker import HandTracker
+from test_tube import TestTube
+from litmus_paper import LitmusPaper
 
 from .stream_state import state
 
-# ── Shared frame buffer ───────────────────────────────────────────────────────
 _latest_frame = None
 _frame_lock   = threading.Lock()
 _lab_thread   = None
 
-# Liquid color for each chemical type — neutral grey hides acid/base identity
 CHEMICAL_COLORS = {
-    "acid":    (60,  60,  220),   # BGR: red-ish
-    "base":    (200, 80,  40),    # BGR: blue-ish
-    "neutral": (200, 200, 255),   # BGR: pale grey
+    "acid":    (60,  60,  220),   
+    "base":    (200, 80,  40),    
+    "neutral": (200, 200, 255),   
 }
 
-# Starting paper colors per litmus type
 PAPER_INIT = {
-    "red_litmus":  (40,  40,  220),   # red
-    "blue_litmus": (220, 80,  40),    # blue
+    "red_litmus":  (40,  40,  220),   
+    "blue_litmus": (220, 80,  40),    
 }
-
 
 def get_latest_frame():
     with _frame_lock:
         return _latest_frame
 
-
 def _run_lab():
     global _latest_frame
-
     from django.core.cache import cache
 
+    print("\n[Virtual Lab] Attempting to access camera...")
     camera = cv2.VideoCapture(0)
     if not camera.isOpened():
         camera = cv2.VideoCapture(1)
     if not camera.isOpened():
         camera = cv2.VideoCapture(2)
+        
+    # Prevent infinite "Pending" feed by sending an explicit error frame
     if not camera.isOpened():
+        print("[Virtual Lab] ERROR: Could not open camera. Check permissions.")
+        error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(error_frame, "CAMERA ERROR / ACCESS DENIED", (50, 240), 
+                    cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 255), 2)
+        _, buffer = cv2.imencode(".jpg", error_frame)
+        with _frame_lock:
+            _latest_frame = buffer.tobytes()
         return
 
-    # Force 640×480 so all coordinates line up correctly
+    print("[Virtual Lab] Camera initialized successfully.")
     camera.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     tracker = HandTracker()
     tube    = TestTube(x=350, y=150, width=60, height=200)
-
-    # Paper sits at bottom-left; tube pours toward it
-    paper = LitmusPaper(x=50, y=310, width=120, height=140)
+    paper   = LitmusPaper(x=50, y=310, width=120, height=140)
 
     reaction_type    = state.get("reaction_type") or "red_litmus"
     current_reaction = reaction_type
     reaction_triggered = False
 
-    # Set initial paper color from reaction type
     init_color = PAPER_INIT.get(reaction_type, PAPER_INIT["red_litmus"])
     paper.base_color    = init_color
     paper.current_color = list(init_color)
@@ -80,11 +75,11 @@ def _run_lab():
         while state["running"]:
             success, frame = camera.read()
             if not success:
+                print("[Virtual Lab] Warning: Failed to grab frame from camera.")
                 break
 
             frame = cv2.flip(frame, 1)
 
-            # Re-init paper when reaction type changes (new session)
             new_reaction = state.get("reaction_type") or "red_litmus"
             if new_reaction != current_reaction:
                 current_reaction   = new_reaction
@@ -95,23 +90,17 @@ def _run_lab():
                 paper.target_color  = list(init_color)
                 paper.wet_spots     = []
 
-            # Read chemical type — neutral grey liquid hides identity from user
             chemical_type = cache.get("active_chemical_type", "neutral")
             liquid_color  = CHEMICAL_COLORS.get(chemical_type, CHEMICAL_COLORS["neutral"])
             tube.liquid_color = liquid_color
 
-            # Hand tracking
             frame = tracker.find_hands(frame)
             angle = tracker.get_hand_angle(frame)
             tube.set_angle(angle)
 
-            # Draw paper first (behind tube)
             frame = paper.draw(frame)
-
-            # Draw tube
             frame = tube.draw(frame)
 
-            # Stream → paper collision
             if tube.is_pouring and tube.liquid_level > 0:
                 angle_rad   = math.radians(tube.display_angle)
                 pivot_x     = tube.x + tube.width // 2
@@ -124,7 +113,6 @@ def _run_lab():
                 splash_y    = end_y + 85
                 paper.receive_liquid(end_x, splash_y, liquid_color)
 
-                # Trigger reaction flag when acid+blue_litmus or base+red_litmus
                 if not reaction_triggered:
                     reacts = (
                         (current_reaction == "blue_litmus" and chemical_type == "acid") or
@@ -135,7 +123,6 @@ def _run_lab():
                         reaction_triggered = True
                         cache.set("reaction_complete_flag", True, timeout=60)
 
-            # Reaction complete banner
             if reaction_triggered:
                 fh, fw = frame.shape[:2]
                 by = fh // 2 - 38
@@ -158,16 +145,12 @@ def _run_lab():
         with _frame_lock:
             _latest_frame = None
 
-
 def start_lab():
-    """Called by start_reaction_view — opens camera and starts processing."""
     global _lab_thread
     state["running"] = True
     if _lab_thread is None or not _lab_thread.is_alive():
         _lab_thread = threading.Thread(target=_run_lab, daemon=True)
         _lab_thread.start()
 
-
 def stop_lab():
-    """Called by stop_reaction_view — stops loop and releases camera."""
     state["running"] = False
