@@ -1,76 +1,117 @@
 # reactions/opencv_handler.py
-import cv2
-import math
-import sys
-import os
-import threading
+# Place in: backend/reactions/opencv_handler.py — REPLACE existing file entirely.
+#
+# Imports HandTracker, TestTube, LitmusPaper directly from opencv_modules/
+# Camera is LAZY — only starts on start_lab(), stops on stop_lab().
 
-# ── Point to your opencv_modules folder ──────────────────────────────────────
+import os
+import sys
+import math
+import threading
+import cv2
+
+# ── Point to opencv_modules/ (sits alongside backend/ at project root) ────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../opencv_modules'))
 
-from hand_tracker import HandTracker
-from test_tube import TestTube
-from litmus_paper import LitmusPaper
+from hand_tracker  import HandTracker
+from test_tube     import TestTube
+from litmus_paper  import LitmusPaper
 
-# ── Color map: chemical type → (liquid_color BGR, paper_color BGR) ────────────
+from .stream_state import state
+
+# ── Shared frame buffer ───────────────────────────────────────────────────────
+_latest_frame = None
+_frame_lock   = threading.Lock()
+_lab_thread   = None
+
+# Liquid color for each chemical type — neutral grey hides acid/base identity
 CHEMICAL_COLORS = {
-    'acid':    ((60,  60,  220), (60,  60,  220)),  # red liquid, red paper
-    'base':    ((200, 80,  40),  (200, 80,  40)),   # blue liquid, blue paper
-    'neutral': ((200, 200, 255), (210, 230, 240)),  # clear liquid, cream paper
+    "acid":    (60,  60,  220),   # BGR: red-ish
+    "base":    (200, 80,  40),    # BGR: blue-ish
+    "neutral": (200, 200, 255),   # BGR: pale grey
 }
 
-def generate_frames(reaction_type):
-    """
-    Drop-in replacement for the original generate_frames.
-    Reads chemical type from Django cache each frame so color
-    updates live when user clicks a chemical in the UI.
-    """
+# Starting paper colors per litmus type
+PAPER_INIT = {
+    "red_litmus":  (40,  40,  220),   # red
+    "blue_litmus": (220, 80,  40),    # blue
+}
+
+
+def get_latest_frame():
+    with _frame_lock:
+        return _latest_frame
+
+
+def _run_lab():
+    global _latest_frame
+
     from django.core.cache import cache
 
     camera = cv2.VideoCapture(0)
     if not camera.isOpened():
+        camera = cv2.VideoCapture(1)
+    if not camera.isOpened():
+        camera = cv2.VideoCapture(2)
+    if not camera.isOpened():
         return
+
+    # Force 640×480 so all coordinates line up correctly
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     tracker = HandTracker()
     tube    = TestTube(x=350, y=150, width=60, height=200)
-    paper   = LitmusPaper(x=310, y=420, width=90, height=130)
 
-    # Set initial paper color based on reaction type
-    # red_litmus starts red, blue_litmus starts blue
-    if reaction_type == 'red_litmus':
-        paper.base_color    = (60, 60, 220)
-        paper.current_color = [60, 60, 220]
-        paper.target_color  = [60, 60, 220]
-    elif reaction_type == 'blue_litmus':
-        paper.base_color    = (200, 80, 40)
-        paper.current_color = [200, 80, 40]
-        paper.target_color  = [200, 80, 40]
+    # Paper sits at bottom-left; tube pours toward it
+    paper = LitmusPaper(x=50, y=310, width=120, height=140)
+
+    reaction_type    = state.get("reaction_type") or "red_litmus"
+    current_reaction = reaction_type
+    reaction_triggered = False
+
+    # Set initial paper color from reaction type
+    init_color = PAPER_INIT.get(reaction_type, PAPER_INIT["red_litmus"])
+    paper.base_color    = init_color
+    paper.current_color = list(init_color)
+    paper.target_color  = list(init_color)
 
     try:
-        while True:
+        while state["running"]:
             success, frame = camera.read()
             if not success:
                 break
 
             frame = cv2.flip(frame, 1)
 
-            # ── Read selected chemical from cache (set by set_chemical_view) ──
-            chemical_type = cache.get('active_chemical_type', 'neutral')
-            liquid_color, _ = CHEMICAL_COLORS.get(chemical_type, CHEMICAL_COLORS['neutral'])
+            # Re-init paper when reaction type changes (new session)
+            new_reaction = state.get("reaction_type") or "red_litmus"
+            if new_reaction != current_reaction:
+                current_reaction   = new_reaction
+                reaction_triggered = False
+                init_color = PAPER_INIT.get(new_reaction, PAPER_INIT["red_litmus"])
+                paper.base_color    = init_color
+                paper.current_color = list(init_color)
+                paper.target_color  = list(init_color)
+                paper.wet_spots     = []
+
+            # Read chemical type — neutral grey liquid hides identity from user
+            chemical_type = cache.get("active_chemical_type", "neutral")
+            liquid_color  = CHEMICAL_COLORS.get(chemical_type, CHEMICAL_COLORS["neutral"])
             tube.liquid_color = liquid_color
 
-            # ── Hand tracking ─────────────────────────────────────────────────
+            # Hand tracking
             frame = tracker.find_hands(frame)
             angle = tracker.get_hand_angle(frame)
             tube.set_angle(angle)
 
-            # ── Draw paper first (behind tube) ────────────────────────────────
+            # Draw paper first (behind tube)
             frame = paper.draw(frame)
 
-            # ── Draw tube ─────────────────────────────────────────────────────
+            # Draw tube
             frame = tube.draw(frame)
 
-            # ── Connect pour stream to litmus paper ───────────────────────────
+            # Stream → paper collision
             if tube.is_pouring and tube.liquid_level > 0:
                 angle_rad   = math.radians(tube.display_angle)
                 pivot_x     = tube.x + tube.width // 2
@@ -80,24 +121,53 @@ def generate_frames(reaction_type):
                 stream_y    = int(pivot_y + mouth_off_x * math.sin(angle_rad))
                 end_x       = stream_x - 45
                 end_y       = stream_y + 130
-                paper.receive_liquid(end_x, end_y + 85, liquid_color)
+                splash_y    = end_y + 85
+                paper.receive_liquid(end_x, splash_y, liquid_color)
 
-            # ── HUD: show current chemical type ───────────────────────────────
-            cv2.putText(frame, f"Chemical: {chemical_type}",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 2)
-            if tube.is_pouring:
-                cv2.putText(frame, "POURING",
-                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 220), 2)
+                # Trigger reaction flag when acid+blue_litmus or base+red_litmus
+                if not reaction_triggered:
+                    reacts = (
+                        (current_reaction == "blue_litmus" and chemical_type == "acid") or
+                        (current_reaction == "red_litmus"  and chemical_type == "base")
+                    )
+                    px, py, pw, ph = paper.x, paper.y, paper.width, paper.height
+                    if reacts and px <= end_x <= px + pw and py <= splash_y <= py + ph:
+                        reaction_triggered = True
+                        cache.set("reaction_complete_flag", True, timeout=60)
 
-            # ── Encode and yield MJPEG frame ──────────────────────────────────
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            if not ret:
-                continue
+            # Reaction complete banner
+            if reaction_triggered:
+                fh, fw = frame.shape[:2]
+                by = fh // 2 - 38
+                overlay = frame.copy()
+                cv2.rectangle(overlay, (0, by), (fw, by + 68), (8, 8, 8), -1)
+                cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
+                cv2.putText(frame, "REACTION COMPLETE",
+                            (fw // 2 - 188, by + 46),
+                            cv2.FONT_HERSHEY_DUPLEX, 1.25, (0, 180, 80), 4, cv2.LINE_AA)
+                cv2.putText(frame, "REACTION COMPLETE",
+                            (fw // 2 - 188, by + 46),
+                            cv2.FONT_HERSHEY_DUPLEX, 1.25, (0, 255, 120), 2, cv2.LINE_AA)
 
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n'
-            )
+            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            with _frame_lock:
+                _latest_frame = buffer.tobytes()
 
     finally:
         camera.release()
+        with _frame_lock:
+            _latest_frame = None
+
+
+def start_lab():
+    """Called by start_reaction_view — opens camera and starts processing."""
+    global _lab_thread
+    state["running"] = True
+    if _lab_thread is None or not _lab_thread.is_alive():
+        _lab_thread = threading.Thread(target=_run_lab, daemon=True)
+        _lab_thread.start()
+
+
+def stop_lab():
+    """Called by stop_reaction_view — stops loop and releases camera."""
+    state["running"] = False

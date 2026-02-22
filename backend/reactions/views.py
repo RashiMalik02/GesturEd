@@ -12,7 +12,6 @@ from django.views.decorators.http import require_http_methods
 from . import stream_state
 from .opencv_handler import get_latest_frame, start_lab, stop_lab
 
-# ── Chemical registry ─────────────────────────────────────────────────────────
 CHEMICALS = {
     "HCl":        {"label": "Hydrochloric Acid",   "type": "acid",    "formula": "HCl"},
     "H2SO4":      {"label": "Sulfuric Acid",        "type": "acid",    "formula": "H₂SO₄"},
@@ -35,7 +34,6 @@ CACHE_KEY_REACTION_DONE = "reaction_complete_flag"
 CACHE_TIMEOUT           = 3600
 
 
-# ── MJPEG generator ───────────────────────────────────────────────────────────
 def _mjpeg_generator():
     while True:
         frame = get_latest_frame()
@@ -46,7 +44,7 @@ def _mjpeg_generator():
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         )
-        time.sleep(0.03)   # ~30 fps cap, prevents busy-wait CPU spike
+        time.sleep(0.03)
 
 
 # ── Reaction endpoints ────────────────────────────────────────────────────────
@@ -66,17 +64,15 @@ def start_reaction_view(request):
         return JsonResponse({"error": "Invalid reaction_type."}, status=400)
 
     request.session["active_reaction"] = reaction_type
-
-    # Reset all state for fresh session
     stream_state.set_reaction(reaction_type)
     stream_state.state["chemical_id"]   = None
     stream_state.state["chemical_type"] = "neutral"
+
     cache.delete(CACHE_KEY_CHEMICAL)
     cache.delete(CACHE_KEY_CHEMICAL_META)
     cache.set(CACHE_KEY_REACTION_DONE, False, timeout=CACHE_TIMEOUT)
 
-    # Start the OpenCV thread (lazy — only runs when user is in the lab)
-    start_lab()
+    start_lab()   # ← opens camera only now
 
     return JsonResponse({"message": "Reaction started.", "active_reaction": reaction_type})
 
@@ -87,8 +83,7 @@ def stop_reaction_view(request):
     cleared = "active_reaction" in request.session
     request.session.pop("active_reaction", None)
 
-    # Stop the OpenCV thread — releases the camera
-    stop_lab()
+    stop_lab()    # ← releases camera
 
     stream_state.state["reaction_type"]  = None
     stream_state.state["chemical_id"]    = None
@@ -143,15 +138,15 @@ def set_chemical_view(request):
 
     meta = CHEMICALS[chemical_id]
     stream_state.set_chemical(chemical_id)
-    cache.set(CACHE_KEY_CHEMICAL,      meta["type"],                timeout=CACHE_TIMEOUT)
+    cache.set(CACHE_KEY_CHEMICAL,      meta["type"], timeout=CACHE_TIMEOUT)
     cache.set(CACHE_KEY_CHEMICAL_META, {
         "id": chemical_id, "label": meta["label"],
         "type": meta["type"], "formula": meta["formula"],
-    },                                                              timeout=CACHE_TIMEOUT)
-    cache.set(CACHE_KEY_REACTION_DONE, False,                       timeout=CACHE_TIMEOUT)
+    }, timeout=CACHE_TIMEOUT)
+    cache.set(CACHE_KEY_REACTION_DONE, False, timeout=CACHE_TIMEOUT)
 
     return JsonResponse({
-        "message":  f"Chemical set to {chemical_id}.",
+        "message": f"Chemical set to {chemical_id}.",
         "chemical": {
             "id": chemical_id, "label": meta["label"],
             "type": meta["type"], "formula": meta["formula"],
