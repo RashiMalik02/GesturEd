@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
-
 if (!document.getElementById('lab-styles')) {
   const tag = document.createElement('style');
   tag.id = 'lab-styles';
@@ -43,7 +42,7 @@ function buildRevealMessage(chemical, reactionType) {
       color: '#38bdf8',
     };
   }
-  // Mismatched — acid on red or base on blue: no colour change
+
   const typeLabel = type === 'acid' ? 'an acid' : 'a base';
   return {
     headline: 'No Change — Wrong Litmus',
@@ -53,7 +52,6 @@ function buildRevealMessage(chemical, reactionType) {
   };
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
   page: {
     minHeight: '100vh',
@@ -99,8 +97,6 @@ const s = {
     background: 'var(--accent-green)',
     animation: 'pulse 1.5s ease-in-out infinite',
   },
-
-  // ── Chemical bubble row ───────────────────────────────────────────────────
   bubbleSection: {
     width: '100%',
     maxWidth: '820px',
@@ -133,8 +129,6 @@ const s = {
     opacity: loading ? 0.5 : 1,
     whiteSpace: 'nowrap',
   }),
-
-  // ── Stream card ───────────────────────────────────────────────────────────
   streamCard: {
     width: '100%',
     maxWidth: '820px',
@@ -169,8 +163,6 @@ const s = {
     minHeight: '280px',
     background: '#000',
   },
-
-  // ── Educational reveal banner ─────────────────────────────────────────────
   revealBanner: (accentColor) => ({
     width: '100%',
     maxWidth: '820px',
@@ -220,7 +212,6 @@ const s = {
   },
 };
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function Lab() {
   const navigate  = useNavigate();
   const stopCalled = useRef(false);
@@ -228,23 +219,20 @@ export default function Lab() {
 
   const [chemicals, setChemicals]           = useState([]);
   const [activeId, setActiveId]             = useState(null);
-  const [activeMeta, setActiveMeta]         = useState(null); // secretly stored type+label+formula
+  const [activeMeta, setActiveMeta]         = useState(null);
   const [loadingChem, setLoadingChem]       = useState(null);
-  const [revealData, setRevealData]         = useState(null); // educational message
+  const [revealData, setRevealData]         = useState(null);
   const [reactionType, setReactionType]     = useState(null);
 
-  // Fetch chemicals on mount (type intentionally not in response)
   useEffect(() => {
     api.get('/reactions/chemicals/')
       .then((r) => setChemicals(r.data.chemicals))
       .catch(() => {});
-    // Also grab the active reaction type so reveal message is accurate
     api.get('/reactions/current/')
       .then((r) => setReactionType(r.data.active_reaction))
       .catch(() => {});
   }, []);
 
-  // Poll /status/ every second for reaction completion
   useEffect(() => {
     pollRef.current = setInterval(async () => {
       try {
@@ -258,22 +246,20 @@ export default function Lab() {
           setRevealData(msg);
         }
       } catch {
-        // Ignore transient errors — keep polling
       }
     }, 1000);
     return () => clearInterval(pollRef.current);
   }, [reactionType]);
 
   const handleSelectChemical = async (chem) => {
-    if (loadingChem || revealData) return; // lock after reaction
+    if (loadingChem || revealData) return;
     setLoadingChem(chem.id);
-    setRevealData(null); // clear previous reveal if re-selecting
+    setRevealData(null);
     try {
       const { data } = await api.post('/reactions/set-chemical/', { chemical_id: chem.id });
       setActiveId(chem.id);
-      setActiveMeta(data.chemical); // secretly store type/formula
+      setActiveMeta(data.chemical);
     } catch {
-      // Keep previous selection
     } finally {
       setLoadingChem(null);
     }
@@ -306,7 +292,6 @@ export default function Lab() {
   return (
     <div style={s.page}>
 
-      {/* ── Top bar ── */}
       <div style={s.topBar}>
         <button style={s.backBtn} onClick={handleBack}>← Back</button>
         <div style={s.statusRow}>
@@ -315,7 +300,6 @@ export default function Lab() {
         </div>
       </div>
 
-      {/* ── Chemical bubble row ── */}
       <div style={s.bubbleSection}>
         <span style={s.bubbleLabel}>// Select substance for the test tube</span>
         <div style={s.bubbleRow}>
@@ -338,7 +322,6 @@ export default function Lab() {
         </div>
       </div>
 
-      {/* ── Video stream ── */}
       <div style={s.streamCard}>
         <div style={s.windowBar}>
           <span style={s.wDot('#f87171')} />
@@ -348,10 +331,6 @@ export default function Lab() {
             {activeId ? `// loaded: ${activeId}` : '// webcam feed — select a substance'}
           </span>
         </div>
-        {/*
-          crossOrigin="use-credentials" REQUIRED — session cookie must travel
-          cross-origin (port 5173 → 8000) or Django returns 401.
-        */}
         <img
           src="http://localhost:8000/api/reactions/video-feed/"
           crossOrigin="use-credentials"
@@ -360,7 +339,6 @@ export default function Lab() {
         />
       </div>
 
-      {/* ── Educational reveal banner (appears after reaction_complete_flag) ── */}
       {revealData && (
         <div style={s.revealBanner(revealData.color)}>
           <div style={s.revealHeader(revealData.color)}>
