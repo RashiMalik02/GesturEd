@@ -332,7 +332,7 @@ export default function Lab() {
           </span>
         </div>
         <img
-          src="http://localhost:8000/api/reactions/video-feed/"
+          src={`${api.defaults.baseURL}/reactions/video-feed/`}
           crossOrigin="use-credentials"
           alt="Virtual Lab Stream"
           style={s.stream}

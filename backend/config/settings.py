@@ -13,7 +13,7 @@ SECRET_KEY = 'django-insecure-r%6+har%j4k(+-ti1l2e*8j)t&iq!ybzx8f9df9*0b0u)#5u-z
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -109,9 +109,13 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",   
+    "http://localhost:3000",          # If you are viewing on your laptop
+    "http://localhost:5173",          # Your original Vite dev port
+    "http://192.168.6.175:3000"
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-SESSION_COOKIE_SAMESITE = "Lax" 
-SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SAMESITE = "None" 
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_SECURE = True
