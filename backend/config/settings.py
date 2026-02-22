@@ -109,11 +109,17 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",          # If you are viewing on your laptop
-    "http://localhost:5173",          # Your original Vite dev port
-    "http://192.168.6.175:3000"
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://192.168.6.175:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://192.168.6.175:3000",
+    "http://localhost:3000",
+]
 
 SESSION_COOKIE_SAMESITE = "None" 
 SESSION_COOKIE_SECURE = True
