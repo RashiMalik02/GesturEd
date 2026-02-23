@@ -1,5 +1,8 @@
+# backend/config/settings.py
+
 from pathlib import Path
 from corsheaders.defaults import default_headers
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -109,24 +112,31 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-CORS_ALLOWED_ORIGINS = [
+# ---------------------------------------------------------------------------
+# CORS / CSRF — dynamic for local dev
+# Base origins always allowed. Any extra host injected via DJANGO_EXTRA_ORIGINS
+# e.g.  DJANGO_EXTRA_ORIGINS=http://192.168.6.175:5173 python manage.py runserver
+# ---------------------------------------------------------------------------
+_BASE_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
-    "http://192.168.6.175:3000",
+    "http://127.0.0.1:5173",
 ]
+
+_extra = os.getenv("DJANGO_EXTRA_ORIGINS", "")
+_extra_origins = [o.strip() for o in _extra.split(",") if o.strip()]
+
+CORS_ALLOWED_ORIGINS = _BASE_ORIGINS + _extra_origins
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
     "ngrok-skip-browser-warning",
 ]
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://192.168.6.175:3000",
-    "http://localhost:3000",
-]
+CSRF_TRUSTED_ORIGINS = _BASE_ORIGINS + _extra_origins
 
-SESSION_COOKIE_SAMESITE = "None" 
+SESSION_COOKIE_SAMESITE = "None"
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = "None"
 CSRF_COOKIE_SECURE = True

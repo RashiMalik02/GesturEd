@@ -5,7 +5,7 @@ import threading
 import cv2
 import numpy as np
 
-sys.path.insert(0, '/Users/talindaga/Desktop/ChemLabs/opencv_modules')
+sys.path.insert(0, '/Users/talindaga/Desktop/Desktop/ChemLabs/opencv_modules')
 
 from hand_tracker import HandTracker
 from test_tube import TestTube

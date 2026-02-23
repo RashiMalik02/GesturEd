@@ -1,3 +1,5 @@
+// frontend/src/components/Lab.jsx
+
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
@@ -333,13 +335,10 @@ export default function Lab() {
         </div>
         {/* Relative path routes through Vite proxy — no auth, no CORS */}
         <img
-          src="http://192.168.6.175:8000/api/reactions/video-feed/"
+          src="/api/reactions/video-feed/"
           alt="Virtual Lab Stream"
           style={s.stream}
         />
-
-
-
       </div>
 
       {revealData && (
