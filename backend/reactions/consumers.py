@@ -2,8 +2,6 @@
 
 import sys
 import math
-import base64
-import asyncio
 from pathlib import Path
 
 import cv2
@@ -11,8 +9,6 @@ import numpy as np
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 # ── Dynamic path fix ────────────────────────────────────────────────────────
-# BASE_DIR = backend/
-# opencv_modules lives at backend/opencv_modules/
 _OPENCV_MODULES = Path(__file__).resolve().parent.parent / 'opencv_modules'
 if str(_OPENCV_MODULES) not in sys.path:
     sys.path.insert(0, str(_OPENCV_MODULES))
@@ -41,19 +37,23 @@ REACTION_RESULT_COLOR = {
 
 
 class LabConsumer(AsyncWebsocketConsumer):
-    """
-    WebSocket consumer for the virtual chemistry lab.
-
-    Protocol (binary messages only):
-      Browser → Backend : raw JPEG bytes of the captured webcam frame
-      Backend → Browser : processed JPEG bytes to display on <canvas>
-    """
 
     async def connect(self):
+        # ── Ownership check ──────────────────────────────────────────────────
+        # If the lab is running, only the session that started it may connect.
+        if state.get("running") and state.get("owner") is not None:
+            session = self.scope.get("session")
+            session_key = session.session_key if session else None
+            if session_key != state.get("owner"):
+                await self.close(code=4403)
+                return
+        # ────────────────────────────────────────────────────────────────────
+
         await self.accept()
+
         self.tracker = HandTracker()
         reaction_type = state.get("reaction_type") or "red_litmus"
-        self.tube = TestTube(x=350, y=150, width=60, height=200)
+        self.tube  = TestTube(x=350, y=150, width=60, height=200)
         self.paper = LitmusPaper(x=50, y=310, width=120, height=140)
 
         init_color = PAPER_INIT.get(reaction_type, PAPER_INIT["red_litmus"])
@@ -61,8 +61,8 @@ class LabConsumer(AsyncWebsocketConsumer):
         self.paper.current_color = list(init_color)
         self.paper.target_color  = list(init_color)
 
-        self.current_reaction    = reaction_type
-        self.reaction_triggered  = False
+        self.current_reaction   = reaction_type
+        self.reaction_triggered = False
 
     async def disconnect(self, close_code):
         try:
@@ -71,14 +71,9 @@ class LabConsumer(AsyncWebsocketConsumer):
             pass
 
     async def receive(self, text_data=None, bytes_data=None):
-        """
-        Called each time the browser sends a raw JPEG frame.
-        We process it and send back the composite JPEG.
-        """
         if bytes_data is None:
             return
 
-        # ── Decode incoming JPEG ────────────────────────────────────────────
         np_arr = np.frombuffer(bytes_data, dtype=np.uint8)
         frame  = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         if frame is None:
@@ -86,10 +81,10 @@ class LabConsumer(AsyncWebsocketConsumer):
 
         frame = cv2.flip(frame, 1)
 
-        # ── Sync reaction / chemical state ──────────────────────────────────
+        # ── Sync state ───────────────────────────────────────────────────────
         new_reaction = state.get("reaction_type") or "red_litmus"
         if new_reaction != self.current_reaction:
-            self.current_reaction  = new_reaction
+            self.current_reaction   = new_reaction
             self.reaction_triggered = False
             init_color = PAPER_INIT.get(new_reaction, PAPER_INIT["red_litmus"])
             self.paper.base_color    = init_color
@@ -118,8 +113,7 @@ class LabConsumer(AsyncWebsocketConsumer):
             stream_x    = int(pivot_x + mouth_off_x * math.cos(angle_rad))
             stream_y    = int(pivot_y + mouth_off_x * math.sin(angle_rad))
             end_x       = stream_x - 45
-            end_y       = stream_y + 130
-            splash_y    = end_y + 85
+            splash_y    = stream_y + 130 + 85
 
             self.paper.receive_liquid(end_x, splash_y, liquid_color)
 
@@ -130,10 +124,9 @@ class LabConsumer(AsyncWebsocketConsumer):
                 )
                 px, py, pw, ph = self.paper.x, self.paper.y, self.paper.width, self.paper.height
                 if reacts and px <= end_x <= px + pw and py <= splash_y <= py + ph:
-                    self.reaction_triggered          = True
-                    state["reaction_complete_flag"]  = True
-                    result_color = REACTION_RESULT_COLOR[self.current_reaction]
-                    self.paper.target_color = list(result_color)
+                    self.reaction_triggered         = True
+                    state["reaction_complete_flag"] = True
+                    self.paper.target_color = list(REACTION_RESULT_COLOR[self.current_reaction])
 
         # ── Reaction-complete banner ─────────────────────────────────────────
         if self.reaction_triggered:
@@ -142,11 +135,9 @@ class LabConsumer(AsyncWebsocketConsumer):
             overlay = frame.copy()
             cv2.rectangle(overlay, (0, by), (fw, by + 68), (8, 8, 8), -1)
             cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
-            cv2.putText(frame, "REACTION COMPLETE",
-                        (fw // 2 - 188, by + 46),
+            cv2.putText(frame, "REACTION COMPLETE", (fw // 2 - 188, by + 46),
                         cv2.FONT_HERSHEY_DUPLEX, 1.25, (0, 180, 80), 4, cv2.LINE_AA)
-            cv2.putText(frame, "REACTION COMPLETE",
-                        (fw // 2 - 188, by + 46),
+            cv2.putText(frame, "REACTION COMPLETE", (fw // 2 - 188, by + 46),
                         cv2.FONT_HERSHEY_DUPLEX, 1.25, (0, 255, 120), 2, cv2.LINE_AA)
 
         # ── Encode and send back ─────────────────────────────────────────────
