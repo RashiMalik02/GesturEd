@@ -123,7 +123,7 @@ def on_mouse(event, x, y, flags, param):
 
 
 def main():
-    cap     = cv2.VideoCapture(1)
+    cap     = cv2.VideoCapture(0)
     tracker = HandTracker()
 
     state = {

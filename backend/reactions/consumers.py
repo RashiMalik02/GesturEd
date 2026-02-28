@@ -20,9 +20,9 @@ from litmus_paper import LitmusPaper
 from .stream_state import state
 
 CHEMICAL_COLORS = {
-    "acid":    (245, 245, 245),
-    "base":    (245, 245, 245),
-    "neutral": (245, 245, 245),
+    "acid":    (60, 60, 220),   
+    "base":    (200, 80, 40),   
+    "neutral": (200, 200, 255), 
 }
 
 PAPER_INIT = {
@@ -54,7 +54,7 @@ class LabConsumer(AsyncWebsocketConsumer):
         self.tracker = HandTracker()
         reaction_type = state.get("reaction_type") or "red_litmus"
         self.tube  = TestTube(x=350, y=150, width=60, height=200)
-        self.paper = LitmusPaper(x=50, y=310, width=120, height=140)
+        self.paper = LitmusPaper(x=310, y=420, width=90, height=130)
 
         init_color = PAPER_INIT.get(reaction_type, PAPER_INIT["red_litmus"])
         self.paper.base_color    = init_color
