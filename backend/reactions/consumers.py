@@ -8,11 +8,9 @@ import cv2
 import numpy as np
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-# ── Dynamic path fix ────────────────────────────────────────────────────────
 _OPENCV_MODULES = Path(__file__).resolve().parent.parent / 'opencv_modules'
 if str(_OPENCV_MODULES) not in sys.path:
     sys.path.insert(0, str(_OPENCV_MODULES))
-# ────────────────────────────────────────────────────────────────────────────
 
 from hand_tracker import HandTracker
 from test_tube import TestTube
@@ -37,11 +35,9 @@ REACTION_RESULT_COLOR = {
 
 
 def _get_session_key(scope):
-    """Safely extract session key from Channels scope."""
     session = scope.get("session")
     if session is None:
         return None
-    # Session may be a lazy object; access session_key safely
     try:
         return session.session_key
     except AttributeError:
@@ -53,7 +49,6 @@ class LabConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         session_key = _get_session_key(self.scope)
 
-        # If lab is running and owned, only the owner may connect
         if state.get("running") and state.get("owner") is not None:
             if session_key != state.get("owner"):
                 await self.close(code=4403)
@@ -74,6 +69,8 @@ class LabConsumer(AsyncWebsocketConsumer):
 
         self.current_reaction   = reaction_type
         self.reaction_triggered = False
+        self.frame_count        = 0
+        self.last_angle         = 0
 
     async def disconnect(self, close_code):
         try:
@@ -82,22 +79,16 @@ class LabConsumer(AsyncWebsocketConsumer):
             pass
 
     async def receive(self, text_data=None, bytes_data=None):
-        try:
-            if bytes_data is None:
-                return
+        if bytes_data is None:
+            return
 
-            np_arr = np.frombuffer(bytes_data, dtype=np.uint8)
-            frame  = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if frame is None:
-                return
-        except Exception as e:
-            import traceback
-            print("CONSUMER ERROR:", traceback.format_exc())
-            raise
+        np_arr = np.frombuffer(bytes_data, dtype=np.uint8)
+        frame  = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return
 
         frame = cv2.flip(frame, 1)
 
-        # ── Sync state ───────────────────────────────────────────────────────
         new_reaction = state.get("reaction_type") or "red_litmus"
         if new_reaction != self.current_reaction:
             self.current_reaction   = new_reaction
@@ -112,15 +103,15 @@ class LabConsumer(AsyncWebsocketConsumer):
         liquid_color  = CHEMICAL_COLORS.get(chemical_type, CHEMICAL_COLORS["neutral"])
         self.tube.liquid_color = liquid_color
 
-        # ── Hand tracking + overlay ──────────────────────────────────────────
+        self.frame_count += 1
         frame = self.tracker.find_hands(frame)
-        angle = self.tracker.get_hand_angle(frame)
-        self.tube.set_angle(angle)
+        if self.frame_count % 2 == 0:
+            self.last_angle = self.tracker.get_hand_angle(frame)
+        self.tube.set_angle(self.last_angle)
 
         frame = self.paper.draw(frame)
         frame = self.tube.draw(frame)
 
-        # ── Pouring / reaction logic ─────────────────────────────────────────
         if self.tube.is_pouring and self.tube.liquid_level > 0:
             angle_rad   = math.radians(self.tube.display_angle)
             pivot_x     = self.tube.x + self.tube.width // 2
@@ -144,7 +135,6 @@ class LabConsumer(AsyncWebsocketConsumer):
                     state["reaction_complete_flag"] = True
                     self.paper.target_color = list(REACTION_RESULT_COLOR[self.current_reaction])
 
-        # ── Reaction-complete banner ─────────────────────────────────────────
         if self.reaction_triggered:
             fh, fw = frame.shape[:2]
             by      = fh // 2 - 38
@@ -156,6 +146,5 @@ class LabConsumer(AsyncWebsocketConsumer):
             cv2.putText(frame, "REACTION COMPLETE", (fw // 2 - 188, by + 46),
                         cv2.FONT_HERSHEY_DUPLEX, 1.25, (0, 255, 120), 2, cv2.LINE_AA)
 
-        # ── Encode and send back ─────────────────────────────────────────────
-        _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
         await self.send(bytes_data=buffer.tobytes())

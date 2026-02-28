@@ -38,9 +38,8 @@ function getWsUrl() {
   return `${proto}://${host}/ws/lab/`;
 }
 
-const FRAME_W = 320;
-const FRAME_H = 240;
-const FPS_INTERVAL = 100; // 10fps
+const FRAME_W = 640;
+const FRAME_H = 480;
 
 const s = {
   page: { minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '1.5rem', gap: '1rem', paddingTop: '2rem' },
@@ -66,18 +65,18 @@ const s = {
 };
 
 export default function Lab() {
-  const navigate   = useNavigate();
-  const stopCalled = useRef(false);
-  const pollRef    = useRef(null);
+  const navigate    = useNavigate();
+  const stopCalled  = useRef(false);
+  const pollRef     = useRef(null);
 
-  // Pipeline refs
-  const wsRef        = useRef(null);
-  const streamRef    = useRef(null);
-  const videoRef     = useRef(null);
-  const canvasRef    = useRef(null);
-  const offCanvasRef = useRef(null);
-  const wsReady      = useRef(false);
+  const wsRef         = useRef(null);
+  const streamRef     = useRef(null);
+  const videoRef      = useRef(null);
+  const canvasRef     = useRef(null);
+  const offCanvasRef  = useRef(null);
+  const wsReady       = useRef(false);
   const frameTimerRef = useRef(null);
+  const sendingRef    = useRef(false);
 
   const [chemicals, setChemicals]       = useState([]);
   const [activeId, setActiveId]         = useState(null);
@@ -108,22 +107,23 @@ export default function Lab() {
       wsRef.current = ws;
 
       function sendFrame() {
-        if (!wsReady.current || ws.readyState !== WebSocket.OPEN) return;
+        if (!wsReady.current || ws.readyState !== WebSocket.OPEN || sendingRef.current) return;
+        sendingRef.current = true;
         const ctx = off.getContext('2d');
         ctx.drawImage(video, 0, 0, FRAME_W, FRAME_H);
         off.toBlob((blob) => {
-          if (!blob) return;
+          if (!blob) { sendingRef.current = false; return; }
           blob.arrayBuffer().then((buf) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(buf);
+            sendingRef.current = false;
           });
-        }, 'image/jpeg', 0.4);
+        }, 'image/jpeg', 0.5);
       }
 
       ws.onopen = () => {
         wsReady.current = true;
         setWsStatus('live');
-        // Timer-based sending — don't wait for response
-        frameTimerRef.current = setInterval(sendFrame, FPS_INTERVAL);
+        frameTimerRef.current = setInterval(sendFrame, 66);
       };
 
       ws.onmessage = (evt) => {
