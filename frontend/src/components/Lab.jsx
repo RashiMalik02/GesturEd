@@ -38,6 +38,10 @@ function getWsUrl() {
   return `${proto}://${host}/ws/lab/`;
 }
 
+const FRAME_W = 320;
+const FRAME_H = 240;
+const FPS_INTERVAL = 100; // 10fps
+
 const s = {
   page: { minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '1.5rem', gap: '1rem', paddingTop: '2rem' },
   topBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', maxWidth: '820px' },
@@ -73,6 +77,7 @@ export default function Lab() {
   const canvasRef    = useRef(null);
   const offCanvasRef = useRef(null);
   const wsReady      = useRef(false);
+  const frameTimerRef = useRef(null);
 
   const [chemicals, setChemicals]       = useState([]);
   const [activeId, setActiveId]         = useState(null);
@@ -83,7 +88,10 @@ export default function Lab() {
 
   const startPipeline = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: FRAME_W, height: FRAME_H },
+        audio: false,
+      });
       streamRef.current = stream;
 
       const video = videoRef.current;
@@ -91,35 +99,34 @@ export default function Lab() {
       await video.play();
 
       const off = document.createElement('canvas');
-      off.width  = 640;
-      off.height = 480;
+      off.width  = FRAME_W;
+      off.height = FRAME_H;
       offCanvasRef.current = off;
 
       const ws = new WebSocket(getWsUrl());
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
-      // ── Ping-pong: send one frame, wait for processed frame, repeat ──────
       function sendFrame() {
         if (!wsReady.current || ws.readyState !== WebSocket.OPEN) return;
         const ctx = off.getContext('2d');
-        ctx.drawImage(video, 0, 0, 640, 480);
+        ctx.drawImage(video, 0, 0, FRAME_W, FRAME_H);
         off.toBlob((blob) => {
           if (!blob) return;
           blob.arrayBuffer().then((buf) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(buf);
           });
-        }, 'image/jpeg', 0.7);
+        }, 'image/jpeg', 0.4);
       }
 
       ws.onopen = () => {
         wsReady.current = true;
         setWsStatus('live');
-        sendFrame(); // kick off the loop
+        // Timer-based sending — don't wait for response
+        frameTimerRef.current = setInterval(sendFrame, FPS_INTERVAL);
       };
 
       ws.onmessage = (evt) => {
-        // Use ImageBitmap — no blob URLs, no memory flood
         createImageBitmap(new Blob([evt.data], { type: 'image/jpeg' })).then((bitmap) => {
           const canvas = canvasRef.current;
           if (canvas) {
@@ -127,8 +134,6 @@ export default function Lab() {
             bitmap.close();
           }
         });
-        // Only send next frame after receiving this one
-        sendFrame();
       };
 
       ws.onerror = () => setWsStatus('error');
@@ -142,6 +147,7 @@ export default function Lab() {
 
   const stopPipeline = useCallback(() => {
     wsReady.current = false;
+    if (frameTimerRef.current) { clearInterval(frameTimerRef.current); frameTimerRef.current = null; }
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
   }, []);
@@ -233,7 +239,7 @@ export default function Lab() {
           <span style={s.wDot('#4ade80')} />
           <span style={s.wTitle}>{activeId ? `// loaded: ${activeId}` : '// webcam feed — select a substance'}</span>
         </div>
-        <canvas ref={canvasRef} width={640} height={480} style={s.canvas} />
+        <canvas ref={canvasRef} width={FRAME_W} height={FRAME_H} style={s.canvas} />
       </div>
 
       {revealData && (
