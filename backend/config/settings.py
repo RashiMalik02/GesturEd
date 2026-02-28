@@ -4,14 +4,11 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# ── Core ───────────────────────────────────────────────────────────────────────
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-# ── Hosts ──────────────────────────────────────────────────────────────────────
-# Render injects RENDER_EXTERNAL_HOSTNAME automatically on all services.
-# Add any additional hosts via DJANGO_EXTRA_HOSTS (comma-separated).
+
 _render_host = os.getenv('RENDER_EXTERNAL_HOSTNAME', '')
 _extra_hosts_raw = os.getenv('DJANGO_EXTRA_HOSTS', '')
 _extra_hosts = [h.strip() for h in _extra_hosts_raw.split(',') if h.strip()]
@@ -20,7 +17,6 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1'] + (
     [_render_host] if _render_host else []
 ) + _extra_hosts
 
-# ── Apps ───────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -63,7 +59,6 @@ TEMPLATES = [
     },
 ]
 
-# ── ASGI / Channels ────────────────────────────────────────────────────────────
 ASGI_APPLICATION = 'config.asgi.application'
 
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
@@ -77,8 +72,6 @@ CHANNEL_LAYERS = {
     }
 }
 
-# ── Database ───────────────────────────────────────────────────────────────────
-# Render managed Postgres sets DATABASE_URL; fall back to SQLite for local dev.
 _db_url = os.getenv('DATABASE_URL')
 if _db_url:
     import dj_database_url  
@@ -103,7 +96,7 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# ── Static files ───────────────────────────────────────────────────────────────
+
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
@@ -115,20 +108,17 @@ STORAGES = {
     },
 }
 
-# ── CORS / CSRF ────────────────────────────────────────────────────────────────
-# Base origins always allowed (local dev)
 _BASE_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://localhost:4173",
     "http://127.0.0.1:5173",
+    "https://gestur-ed.vercel.app",
 ]
 
-# Production frontend URL — set FRONTEND_URL on Render, e.g. https://myapp-frontend.onrender.com
 _frontend_url = os.getenv('FRONTEND_URL', '')
 
-# Any additional origins (comma-separated) via DJANGO_EXTRA_ORIGINS
 _extra_raw = os.getenv('DJANGO_EXTRA_ORIGINS', '')
 _extra_origins = [o.strip() for o in _extra_raw.split(',') if o.strip()]
 
@@ -142,7 +132,6 @@ CORS_ALLOW_HEADERS = list(default_headers) + ['ngrok-skip-browser-warning']
 
 CSRF_TRUSTED_ORIGINS = _all_origins
 
-# ── Cookies ────────────────────────────────────────────────────────────────────
 SESSION_COOKIE_SAMESITE = 'None'
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = 'None'
