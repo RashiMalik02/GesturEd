@@ -1,7 +1,5 @@
 # GesturEd
 
-- **deployed project**: https://gestur-ed.vercel.app/
-
 > **Learning you can touch.**
 
 Traditional education confines learning to passive consumption — students read, watch, and forget. There is no intuitive way for learners to *physically interact* with abstract concepts, leaving critical gaps in understanding and retention. **GesturEd** bridges this by transforming hand gestures into a learning interface, making education truly hands-on.
